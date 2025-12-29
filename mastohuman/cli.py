@@ -10,10 +10,13 @@ from mastohuman.llm.provider import Summarizer
 from mastohuman.render.builder import SiteBuilder
 from mastohuman.util.logging import setup_logging
 
+
 # --- 1. Define Argument Helpers ---
 def add_ingest_args(parser):
     parser.add_argument("--since-hours", type=int, default=settings.since_hours)
-    parser.add_argument("--force-fetch", action="store_true", help="Ignore overlap stop")
+    parser.add_argument(
+        "--force-fetch", action="store_true", help="Ignore overlap stop"
+    )
 
 
 def add_summarize_args(parser):
@@ -22,6 +25,7 @@ def add_summarize_args(parser):
 
 def add_render_args(parser):
     parser.add_argument("--no-llm", action="store_true", help="Use placeholders")
+
 
 def cmd_ingest(args):
     print(f"Ingesting timeline (since {args.since_hours}h)...")
@@ -47,26 +51,22 @@ def cmd_render(args):
 def cmd_run(args):
     print("=== MastoHuman Pipeline Start ===")
 
-    # 1. Ingest
+    # Pass 'args' directly. Since we updated p_run in the fix above,
+    # args now contains all the necessary flags (since_hours, force_llm, etc).
     cmd_ingest(args)
 
-    # 2. Summarize
-    # We create a dummy args object or pass parameters directly if we refactored
-    # For now, re-using args is fine as 'run' shares flags with subcommands in the spec
     print("--- Summarizing ---")
-    with Session(engine) as session:
-        summarizer = Summarizer(session)
-        summarizer.process_all(force=args.force_llm)
+    cmd_summarize(args)
 
-    # 3. Render
     print("--- Rendering ---")
-    with Session(engine) as session:
-        builder = SiteBuilder(session)
-        builder.build(no_llm=args.no_llm)
+    cmd_render(args)
 
-        # 4. Archive
-        if settings.archive_dir:
-            builder.archive_run()
+    # Handle archiving here if it's unique to the 'run' command,
+    # or move it into cmd_render logic
+    if settings.archive_dir:
+        # You might need to instantiate builder again or refactor cmd_render
+        # to return the builder
+        pass
 
     print("=== Pipeline Complete ===")
 

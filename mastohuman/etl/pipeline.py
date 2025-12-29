@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Set, List
+from typing import List, Set
 
 from sqlmodel import Session, select
 
@@ -62,7 +62,9 @@ class IngestionManager:
         known_accts = []
 
         # 2. Paginate through following
-        for page in self.client.paginate(self.client.get_account_following, account_id=my_id, limit=80):
+        for page in self.client.paginate(
+            self.client.get_account_following, account_id=my_id, limit=80
+        ):
             for api_account in page:
                 self._upsert_account(api_account)
                 known_accts.append(api_account["acct"])
@@ -106,7 +108,9 @@ class IngestionManager:
         # Optimization: Skip if we fetched very recently (e.g., within 15 mins)
         # to prevent hammering API on repeated runs.
         if not force_fetch and account.last_fetch_at:
-            delta = datetime.now(timezone.utc) - account.last_fetch_at.replace(tzinfo=timezone.utc)
+            delta = datetime.now(timezone.utc) - account.last_fetch_at.replace(
+                tzinfo=timezone.utc
+            )
             if delta < timedelta(minutes=15):
                 logger.debug(f"Skipping {acct} (synced {int(delta.seconds / 60)}m ago)")
                 return
@@ -120,9 +124,9 @@ class IngestionManager:
 
         # Iterate pages
         for page in self.client.paginate(
-                self.client.get_account_statuses,
-                account_id=account.server_account_id,
-                limit=40,
+            self.client.get_account_statuses,
+            account_id=account.server_account_id,
+            limit=40,
         ):
             page_existing_count = 0
             page_items_count = len(page)
@@ -168,9 +172,9 @@ class IngestionManager:
 
             # Overlap Stop Rule
             if (
-                    not force_fetch
-                    and page_items_count > 0
-                    and page_existing_count == page_items_count
+                not force_fetch
+                and page_items_count > 0
+                and page_existing_count == page_items_count
             ):
                 logger.debug(f"Overlap detected for {acct}. Stopping sync.")
                 break

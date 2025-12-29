@@ -1,10 +1,12 @@
 import logging
-from typing import Any, Generator, Callable
+from typing import Any, Callable, Generator
 
 from mastodon import Mastodon, MastodonNetworkError, MastodonRatelimitError
-# Remove tenacity; Mastodon.py handles retries/waiting nicely with ratelimit_method='wait'
 
 from mastohuman.config.settings import settings
+
+# Remove tenacity; Mastodon.py handles retries/waiting nicely with ratelimit_method='wait'
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +18,7 @@ class MastodonClient:
             access_token=settings.mastodon_access_token.get_secret_value(),
             user_agent=settings.mastodon_user_agent,
             request_timeout=settings.mastodon_timeout_s,
-            ratelimit_method='wait'  # Handles 429s automatically by sleeping
+            ratelimit_method="wait",  # Handles 429s automatically by sleeping
         )
 
     def get_me(self) -> dict:
@@ -31,13 +33,12 @@ class MastodonClient:
 
     def get_account_statuses(self, account_id: str | int, limit: int = 40) -> Any:
         return self.api.account_statuses(
-            account_id,
-            limit=limit,
-            exclude_reblogs=True,
-            exclude_replies=False
+            account_id, limit=limit, exclude_reblogs=True, exclude_replies=False
         )
 
-    def paginate(self, initial_fetch_func: Callable, **kwargs) -> Generator[list[dict], None, None]:
+    def paginate(
+        self, initial_fetch_func: Callable, **kwargs
+    ) -> Generator[list[dict], None, None]:
         """
         Adapts Mastodon.py pagination to a generator.
         """
