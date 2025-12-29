@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Daily Digest</h2>
+{% for p in people %}
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:baseline;">
+        <strong><a href="people/{{ p.slug }}/index.html" style="border:none; font-size:1.1em;">{{ p.account.display_name or p.account.acct }}</a></strong>
+        <span class="meta">{{ p.account.acct }}</span>
+    </div>
+
+    <div style="margin-top: 1rem;">
+        <span class="headline">{{ p.summary.headline }}</span>
+        <p class="blurb">{{ p.summary.blurb }}</p>
+    </div>
+</div>
+{% else %}
+<p>No recent updates found.</p>
+{% endfor %}
+{% endblock %}

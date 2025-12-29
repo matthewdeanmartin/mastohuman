@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="nav">
+    <a href="../../index.html">← Back to Digest</a>
+</div>
+
+<div class="card" style="background: #f9f9f9;">
+    <h1>{{ person.account.display_name }}</h1>
+    <p class="meta">{{ person.account.acct }}</p>
+    <hr>
+    <p><strong>{{ person.summary.headline }}</strong></p>
+    <p>{{ person.summary.blurb }}</p>
+</div>
+
+<h3>Recent Original Posts</h3>
+{% for status in statuses %}
+<div class="card">
+    <div class="meta">{{ status.created_at|dateformat }}</div>
+    <div class="content" style="white-space: pre-wrap;">{{ status.content_text }}</div>
+    {% if status.url %}
+        <br><a href="{{ status.url }}" class="meta">View on Mastodon</a>
+    {% endif %}
+</div>
+{% endfor %}
+
+{% endblock %}

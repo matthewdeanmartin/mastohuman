@@ -1,0 +1,58 @@
+from pathlib import Path
+from typing import Literal, Optional
+
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    # Mastodon
+    mastodon_base_url: (
+        str  # Kept as str to avoid Pydantic URL trailing slash complexities in API
+    )
+    mastodon_access_token: SecretStr
+    mastodon_timeout_s: float = 30.0
+    mastodon_user_agent: str = "MastoHuman/0.1.0"
+
+    # Fetch limits
+    since_hours: int = 24
+    max_profile_statuses: int = 500
+    max_profile_age_days: int = 92
+    page_size: int = 40
+
+    # Database
+    db_path: Path = Path("mastohuman.db")
+    db_echo: bool = False
+
+    # LLM
+    llm_provider: Literal["openai", "openrouter", "ollama", "none"] = "openai"
+    llm_model: str = "gpt-4o"
+    llm_temperature: float = 0.7
+    llm_max_tokens: int = 1000
+    llm_api_key: Optional[SecretStr] = None
+    llm_base_url: Optional[str] = None
+
+    # Rendering
+    site_title: str = "My Mastodon Reader"
+    output_dir: Path = Path("output_dir")
+    archive_dir: Optional[Path] = None
+    base_url: Optional[str] = None
+    templates_dir: Path = Path("templates")
+
+    # Cache Policy
+    rebuild_on_template_change: bool = True
+
+    # Logging
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+
+# Singleton instance
+settings = Settings()
+
+
+def get_db_url() -> str:
+    return f"sqlite:///{settings.db_path}"
