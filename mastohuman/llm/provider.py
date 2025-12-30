@@ -3,7 +3,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
-from typing import List
+from typing import List, Optional
 
 from openai import OpenAI
 from pydantic import BaseModel
@@ -79,12 +79,29 @@ class Summarizer:
         else:
             self.provider = None  # Handle "none" or other providers
 
-    def process_all(self, force: bool = False):
-        """Generates summaries for all accounts seen in the last run."""
-        # Get accounts seen in last 24h (simple heuristic: looked at recently)
+    def process_all(self, force: bool = False, limit: Optional[int] = None):
+        """
+        Generates summaries for accounts seen in the last run.
+        """
+        # Get accounts seen in last 24h
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         stmt = select(Account).where(Account.last_seen_at >= cutoff)
+
+        # FIX: Prioritize accounts that were just fetched (newest last_fetch_at)
+        # This aligns the Summarizer with the Ingest step during limited runs.
+        stmt = (
+            select(Account)
+            .where(Account.last_seen_at >= cutoff)
+            .order_by(Account.last_fetch_at.desc())
+        )
+
+        if limit:
+            stmt = stmt.limit(limit)
+
         accounts = self.db.exec(stmt).all()
+        logger.info(
+            f"Processing summaries for {len(accounts)} accounts (Limit: {limit})"
+        )
 
         for account in accounts:
             self._process_account(account, force)

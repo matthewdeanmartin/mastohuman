@@ -1,10 +1,11 @@
+import json
 import logging
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from mastohuman.config.settings import settings
 from mastohuman.db.models import Account, Status, Summary
@@ -42,20 +43,38 @@ class SiteBuilder:
         results = self.db.exec(stmt).all()
 
         people_data = []
-        for account, summary in results:
-            # Skip accounts with no recent fetch or no activity if desired
-            # Spec implies: list of people from the last daily pipeline
+        skipped_count = 0
 
-            # If no_llm is True, mock the summary
-            if no_llm or not summary:
+        for account, summary in results:
+            # CHECK: Does this account actually have content?
+            # We want original posts only (no boosts/replies) for the count check
+            count_stmt = select(func.count(Status.id)).where(
+                Status.account_acct == account.acct,
+                Status.is_boost == False,
+                Status.is_reply == False,
+            )
+            status_count = self.db.exec(count_stmt).one()
+
+            if status_count == 0:
+                logger.debug(f"Skipping render for {account.acct}: No statuses found.")
+                skipped_count += 1
+                continue
+
+            # Logic for Summary (Mock vs Real)
+            if no_llm:
                 s_obj = {
-                    "headline": "No summary available",
-                    "blurb": "Content processing pending or skipped.",
+                    "headline": "No summary requested",
+                    "blurb": "LLM generation was skipped via flags.",
+                    "tags": [],
+                }
+            elif not summary:
+                # Content exists, but summary is missing (failed or not run yet)
+                s_obj = {
+                    "headline": "Summary Unavailable",
+                    "blurb": "Content is available below, but a summary has not been generated yet.",
                     "tags": [],
                 }
             else:
-                import json
-
                 tags = json.loads(summary.tags_json) if summary.tags_json else []
                 s_obj = {
                     "headline": summary.headline,
@@ -68,11 +87,16 @@ class SiteBuilder:
                     "account": account,
                     "summary": s_obj,
                     "slug": self._slugify(account.acct),
+                    "post_count": status_count,
                 }
             )
 
+        logger.info(
+            f"Rendering {len(people_data)} profiles (Skipped {skipped_count} empty accounts)."
+        )
+
         # 1. Render Front Page
-        self._render_template("index.html", "index.html", people=people_data)
+        self._render_template("index.html.j2", "index.html", people=people_data)
 
         # 2. Render Person Pages
         for person in people_data:
@@ -102,7 +126,9 @@ class SiteBuilder:
         statuses = self.db.exec(stmt).all()
 
         out_path = Path(f"people/{slug}/index.html")
-        self._render_template("person.html", out_path, person=person, statuses=statuses)
+        self._render_template(
+            "person.html.j2", out_path, person=person, statuses=statuses
+        )
 
     def _render_template(self, template_name, output_rel_path, **kwargs):
         template = self.env.get_template(template_name)

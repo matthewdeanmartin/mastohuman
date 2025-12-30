@@ -1,8 +1,50 @@
+import importlib.resources
 from pathlib import Path
 from typing import Literal, Optional
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def get_templates_path() -> Path:
+    """
+    Tries to find templates via importlib (installed package),
+    falls back to relative path (local dev).
+    """
+    # 1. Try importlib.resources (The standard way)
+    try:
+        # This gets a Traversable object for 'mastohuman/templates'
+        # We explicitly look up the 'mastohuman' package
+        ref = importlib.resources.files("mastohuman").joinpath("templates")
+
+        # Convert to strict Path.
+        # Note: If this is inside a zip file (zipped release),
+        # this path might not be usable by standard file IO (see note below).
+        path = Path(ref)
+
+        if path.exists() and path.is_dir():
+            print("Found template folder by resource")
+            return path
+    except (ImportError, TypeError, ValueError, ModuleNotFoundError):
+        pass
+
+    # 2. Fallback: Path hacking (The local dev way)
+    # This anchors to: mastohuman/config/settings.py -> up to mastohuman/ -> templates/
+    local_path = Path(__file__).resolve().parent.parent / "templates"
+    if local_path.exists():
+        print("Found template folder by path hack")
+        return local_path
+
+    # 3. Last Resort: Return relative (user must run from root)
+    print("Can't find anything, hoping to use some thing")
+    return Path("mastohuman/templates")
+
+
+class Settings(BaseSettings):
+    # output_dir setup...
+
+    # Dynamically resolve the path
+    templates_dir: Path = get_templates_path()
 
 
 class Settings(BaseSettings):
@@ -37,7 +79,8 @@ class Settings(BaseSettings):
     output_dir: Path = Path("output_dir")
     archive_dir: Optional[Path] = None
     base_url: Optional[str] = None
-    templates_dir: Path = Path("templates")
+
+    templates_dir: Path = get_templates_path()
 
     # Cache Policy
     rebuild_on_template_change: bool = True

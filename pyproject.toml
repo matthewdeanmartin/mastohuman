@@ -30,3 +30,25 @@ mastohuman = "mastohuman.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "mastohuman/**/*.py",
+    "mastohuman/templates/**/*.j2",
+    "mastohuman/templates/**/*.md.j2",
+    "mastohuman/py.typed",
+    "/README.md", "LICENSE",
+]
+
+exclude = [
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["mastohuman"]
+include = [
+    "mastohuman/**/*.py",
+    "mastohuman/templates/**/*.j2",
+    "mastohuman/templates/**/*.md.j2",
+    "mastohuman/py.typed",
+    "/README.md", "LICENSE",
+]

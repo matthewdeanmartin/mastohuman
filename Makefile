@@ -48,3 +48,9 @@ view:
 	@echo "Press Ctrl+C to stop."
 	@echo "-----------------------------------------------------"
 	uv run python -m http.server 8000 --directory site_output
+
+
+# Small/Test Run (Interruptible)
+# Default limit is 10. You can add flags: make small ARGS="--force-fetch"
+small:
+	uv run python -m mastohuman.cli run --limit 1 $(ARGS)

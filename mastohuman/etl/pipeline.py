@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Set
+from typing import List, Optional
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from mastohuman.config.settings import settings
 from mastohuman.db.models import Account, IngestRun, Status
@@ -17,7 +17,12 @@ class IngestionManager:
         self.db = session
         self.client = MastodonClient()
 
-    def run_pipeline(self, since_hours: int = 24, force_fetch: bool = False):
+    def run_pipeline(
+        self,
+        since_hours: int = 24,
+        force_fetch: bool = False,
+        limit: Optional[int] = None,
+    ):
         """
         Main entry point for 'ingest' command.
         Strategy:
@@ -28,25 +33,75 @@ class IngestionManager:
         run_start = datetime.now(timezone.utc)
 
         # 1. User Discovery (Sync Following)
-        followed_accounts = self._sync_following_list()
-        logger.info(f"Registry updated. Monitoring {len(followed_accounts)} accounts.")
+        # We always run this fully because it's fast (pagination of list only)
+        # and establishes the 'Source of Truth'.
+        if self._should_refresh_following(force_fetch):
+            self._sync_following_list()
+        else:
+            logger.info("Skipping 'Following' list sync (cache is fresh).")
 
-        # 2. Backfill / Sync Content
-        # We iterate over everyone we follow.
-        # Note: _sync_author has internal logic (overlap/age limits) to keep this fast
-        # for frequent runners.
-        for acct in followed_accounts:
-            self._sync_author(acct, force_fetch)
+        # 2. Identify Targets
+        # We query the DB for accounts that we currently follow (seen recently)
+        # Order by last_fetch_at ASC (NULLS FIRST in SQLite default usually,
+        # meaning never-fetched accounts come first, then oldest fetched).
+
+        # Define "Currently Following" as seen in the sync we just did
+        active_window = datetime.now(timezone.utc) - timedelta(hours=24)
+
+        stmt = (
+            select(Account)
+            .where(Account.last_seen_at >= active_window)
+            .order_by(Account.last_fetch_at.asc())
+        )
+
+        if limit:
+            stmt = stmt.limit(limit)
+
+        targets = self.db.exec(stmt).all()
+
+        logger.info(
+            f"Targeting {len(targets)} accounts for content sync (Limit: {limit})."
+        )
+
+        # 3. Backfill / Sync Content
+        for account in targets:
+            self._sync_author(account.acct, force_fetch)
 
         # Record Run
         run_record = IngestRun(
             started_at=run_start,
             completed_at=datetime.now(timezone.utc),
             since_hours=since_hours,
+            notes=f"limit={limit}" if limit else "full_run",
         )
         self.db.add(run_record)
         self.db.commit()
         logger.info("Ingestion complete.")
+
+    def _should_refresh_following(self, force: bool) -> bool:
+        """
+        Returns True if we should hit the API to update the following list.
+        Returns False if the local DB is fresh enough.
+        """
+        if force:
+            return True
+
+        # Check the most recent 'last_seen_at' in the DB
+        stmt = (
+            select(Account.last_seen_at).order_by(Account.last_seen_at.desc()).limit(1)
+        )
+        last_update = self.db.exec(stmt).first()
+
+        if not last_update:
+            return True
+
+        # If list was updated less than 4 hours ago, skip it
+        # (This allows 'make small' to be snappy on repeated runs)
+        delta = datetime.now(timezone.utc) - last_update.replace(tzinfo=timezone.utc)
+        if delta < timedelta(hours=4):
+            return False
+
+        return True
 
     def _sync_following_list(self) -> List[str]:
         """
@@ -59,17 +114,15 @@ class IngestionManager:
         me = self.client.get_me()
         my_id = me["id"]
 
-        known_accts = []
-
-        # 2. Paginate through following
+        count = 0
         for page in self.client.paginate(
             self.client.get_account_following, account_id=my_id, limit=80
         ):
             for api_account in page:
                 self._upsert_account(api_account)
-                known_accts.append(api_account["acct"])
+                count += 1
 
-        return known_accts
+        logger.info(f"Following list synced. Total followed: {count}")
 
     def _upsert_account(self, api_account: dict):
         """Ensures account exists in DB and updates metadata."""
@@ -105,8 +158,9 @@ class IngestionManager:
         if not account:
             return
 
-        # Optimization: Skip if we fetched very recently (e.g., within 15 mins)
-        # to prevent hammering API on repeated runs.
+        # Optimization check is handled by the sorting in run_pipeline
+        # (recently fetched will be at the bottom of the list),
+        # but we keep this check for safety if force_fetch is False.
         if not force_fetch and account.last_fetch_at:
             delta = datetime.now(timezone.utc) - account.last_fetch_at.replace(
                 tzinfo=timezone.utc
